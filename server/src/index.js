@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const Razorpay = require('razorpay');
+const crypto = require('crypto');
 
 // env config
 dotenv.config();
@@ -18,6 +19,7 @@ const app = express();
 
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 
 // API's
@@ -46,7 +48,7 @@ app.get('/all-payments', async (req, res) => {
         //  in feature will fetch the data from UI;
         const response = await instance.payments.all({
             from: '2024-02-18',
-            to: '2024-02-18'
+            to: '2024-02-27' // we can u currect date
         });
 
         return res.status(200).send({ status: true, msg: 'All payments List!', result: response })
@@ -71,12 +73,10 @@ app.get('/all-orders', async (req, res) => {
 
 app.post('/order', async (req, res) => {
     try {
-        var options = {
+        const options = {
             amount: Number(req.body.amount * 100),  // amount in the smallest currency unit
             currency: req.body.currency,
-            receipt: req.body.receipt
         };
-
         const order = await instance.orders.create(options);
 
         return res.status(200).send({ status: true, msg: 'order created!', result: order });
@@ -88,18 +88,29 @@ app.post('/order', async (req, res) => {
 
 app.post('/payment-verification', async (req, res) => {
     try {
-        var options = {
-            amount: Number(req.body.amount * 100),  // amount in the smallest currency unit
-            currency: req.body.currency,
-            receipt: req.body.receipt
-        };
+        const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
 
-        const order = await instance.orders.create(options);
+        const body = razorpay_order_id + "|" + razorpay_payment_id;
 
-        return res.status(200).send({ status: true, msg: 'order created!', result: order });
+        const expectedSignature = crypto
+            .createHmac("sha256", process.env.KEY_SECRET)
+            .update(body.toString())
+            .digest("hex");
+
+        const isAuthentic = expectedSignature === razorpay_signature;
+
+        if (isAuthentic) {
+            // Database comes here
+            console.log('payment verification done');
+           return res.redirect(`http://localhost:5173/`);
+        }else{
+            return res.send({ status: false, msg: 'payment failed', result: [] });
+        }
     } catch (error) {
         return res.status(500).send({ status: false, msg: 'server error', result: [] });
     }
 });
+
+
 
 app.listen(process.env.PORT, () => console.log(`server is running on ${process.env.PORT}!`));
